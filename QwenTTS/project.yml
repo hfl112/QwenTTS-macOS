@@ -1,0 +1,64 @@
+name: QwenTTS
+options:
+  bundleIdPrefix: com.localtts
+targets:
+  QwenTTS:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - QwenTTS
+    settings:
+      INFOPLIST_FILE: QwenTTS/Info.plist
+      CODE_SIGN_ENTITLEMENTS: QwenTTS/QwenTTS.entitlements
+      ENABLE_HARDENED_RUNTIME: YES
+      MACOSX_DEPLOYMENT_TARGET: "14.0"
+      COMBINE_HIDPI_IMAGES: YES
+      CLANG_ENABLE_OBJC_ARC: YES
+      SWIFT_VERSION: "5.9"
+  # ADR-003 B1: logic-only unit-test target. No TEST_HOST on purpose — the app's
+  # AppDelegate spawns the Python backend on launch, so host-based tests would
+  # boot the whole app+backend. Pure types under test (PlaybackPresentation, the
+  # reconcile reducer, the Snapshot model) are compiled into this bundle directly
+  # (added to `sources` per file), so no @testable host is needed.
+  QwenTTSTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - QwenTTSTests
+      # Pure types under test, compiled directly into the logic-only bundle
+      # (no @testable host → no app/backend boot during tests).
+      - path: QwenTTS/State/PlaybackStatus.swift
+      - path: QwenTTS/State/PlaybackPresentation.swift
+      - path: QwenTTS/State/PlaybackReconciler.swift
+      - path: QwenTTS/State/AppStateStore.swift
+      - path: QwenTTS/Backend/APIModels.swift
+      - path: QwenTTS/Backend/MockBackend.swift
+      # C7:AppStateStore 引用 BackendAPIClient(listClient),一并直编
+      - path: QwenTTS/Backend/BackendAPIClient.swift
+      # C8:任务状态词表纯映射
+      - path: QwenTTS/State/JobPresentation.swift
+      # M5:设置写侧纯映射(perf/battery 表、body 组装)
+      - path: QwenTTS/State/SettingsWire.swift
+      # M6:Console 状态徽章/菜单栏状态行纯映射 + 失败监视时序器
+      - path: QwenTTS/State/ConsoleStatusPresentation.swift
+      - path: QwenTTS/State/JobFailureWatcher.swift
+      # M7:崩溃重启策略纯算术 + launcher 协议缝
+      - path: QwenTTS/Backend/RestartPolicy.swift
+    settings:
+      GENERATE_INFOPLIST_FILE: YES
+      SWIFT_VERSION: "5.9"
+      MACOSX_DEPLOYMENT_TARGET: "14.0"
+schemes:
+  QwenTTS:
+    build:
+      targets:
+        QwenTTS: all
+        QwenTTSTests: [test]
+    test:
+      gatherCoverageData: false
+      targets:
+        - QwenTTSTests
+    run:
+      config: Debug

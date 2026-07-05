@@ -1,0 +1,598 @@
+import threading
+import time
+from dataclasses import dataclass
+from typing import Any, Callable
+
+import numpy as np
+from core.inference.engine import adjust_speed_numpy
+from core.state.article_store import ArticleStore
+
+
+@dataclass
+class PlaybackSession:
+    """One read's playback lifecycle (ADR-002). Captures the session id at
+    creation; `id` IS the value of SharedState.current_task_id, the single
+    cross-process session counter. Owns the chunks/config/start_idx/title the
+    producer thread needs."""
+
+    id: int
+    chunks: list[Any]
+    config: dict[str, Any]
+    start_idx: int = 0
+    title: str | None = None
+    # How many audio frames to buffer before playback starts. 1 = lowest
+    # first-sound latency (normal reads). A seek into not-yet-generated audio
+    # raises this so it waits for a cushion instead of stuttering into an empty
+    # buffer (seek-prebuffer, ADR-002 follow-up).
+    prebuffer_frames: int = 1
+
+
+class PlaybackController:
+    """Single owner for playback session invalidation and audio queue cleanup.
+
+    Session identity is a single counter: SharedState.current_task_id (an
+    mp.Value, since the inference process and audio feeder both read it to drop
+    stale work). The old in-process _session_id shadow was removed — it always
+    equaled current_task_id (ADR-002)."""
+
+    def __init__(self, shared_state: Any, pcm_player: Any):
+        self.shared_state = shared_state
+        self.player = pcm_player
+
+    def _next_id(self) -> int:
+        with self.shared_state.current_task_id.get_lock():
+            self.shared_state.current_task_id.value += 1
+            return self.shared_state.current_task_id.value
+
+    def start_new_session(self) -> int:
+        self.shared_state.stop_event.set()
+        if self.player is not None:
+            self.player.stop()
+        session_id = self._next_id()
+        self.drain_audio_queue()
+        self.drain_text_queue()
+        self.shared_state.stop_event.clear()
+        return session_id
+
+    def stop_current_session(self) -> None:
+        self._next_id()
+        self.shared_state.stop_event.set()
+        if self.player is not None:
+            self.player.stop()
+        self.drain_audio_queue()
+        self.drain_text_queue()
+
+    def is_current(self, session_id: int) -> bool:
+        return session_id == self.shared_state.current_task_id.value
+
+    def can_feed_audio(self, session_id: int) -> bool:
+        return not self.shared_state.stop_event.is_set() and self.is_current(session_id)
+
+    def drain_audio_queue(self) -> None:
+        while True:
+            try:
+                self.shared_state.audio_q.get_nowait()
+            except Exception:
+                break
+
+    def drain_text_queue(self) -> None:
+        """Drop chunks/sentinels left by a superseded session. Without this the
+        worker would skip the stale chunks but still forward the old session's
+        sentinel — finishing the NEW session prematurely while its real chunks
+        generate headless (UI shows idle, GPU burns)."""
+        while True:
+            try:
+                self.shared_state.text_q.get_nowait()
+            except Exception:
+                break
+
+    def snapshot(self) -> dict[str, Any]:
+        session_id = self.shared_state.current_task_id.value
+        return {
+            "playback_session_id": session_id,
+            "current_task_id": session_id,
+            "stop_event": self.shared_state.stop_event.is_set(),
+            "audio_qsize": self._safe_qsize(self.shared_state.audio_q),
+            "player_qsize": self.player.queue_depth() if self.player else 0,
+        }
+
+    @staticmethod
+    def _safe_qsize(q: Any) -> int:
+        try:
+            return q.qsize()
+        except Exception:
+            return -1
+
+
+class PlaybackService:
+    def __init__(
+        self,
+        *,
+        shared_state: Any,
+        player: Any,
+        storage: Any,
+        runtime_state: Any,
+        sentinel: str,
+        get_text_hash: Callable[[str], str],
+        get_performance_profile: Callable[[str | None], dict[str, Any]],
+        event_log: Any | None = None,
+    ) -> None:
+        self.shared_state = shared_state
+        self.player = player
+        self.storage = storage
+        self.article_store = ArticleStore(storage) if storage else None
+        self.runtime_state = runtime_state
+        self.sentinel = sentinel
+        self.get_text_hash = get_text_hash
+        self.get_performance_profile = get_performance_profile
+        self.event_log = event_log
+        self.controller = PlaybackController(shared_state, player)
+        self._shutdown_event = threading.Event()
+        self._thread_lock = threading.Lock()
+        self._threads: set[threading.Thread] = set()
+
+    def _start_thread(self, target: Callable, args: tuple[Any, ...], name: str) -> None:
+        if self._shutdown_event.is_set():
+            raise RuntimeError("playback service is shutting down")
+
+        def run() -> None:
+            try:
+                target(*args)
+            finally:
+                with self._thread_lock:
+                    self._threads.discard(threading.current_thread())
+
+        thread = threading.Thread(target=run, name=name, daemon=True)
+        with self._thread_lock:
+            self._threads.add(thread)
+        thread.start()
+
+    def start_new_session(self) -> int:
+        session_id = self.controller.start_new_session()
+        self._record_event("playback_session_started", session_id=session_id)
+        return session_id
+
+    def play(
+        self,
+        chunks: list[Any],
+        config: dict[str, Any],
+        *,
+        start_idx: int = 0,
+        title: str | None = None,
+        prebuffer_frames: int = 1,
+    ) -> PlaybackSession:
+        """Single playback entry (ADR-002): start a new session and stream
+        `chunks` from `start_idx`. Callers do content prep (LLM/parse/state);
+        this owns session identity + producer thread + runtime 'playing' state.
+        seek is just play(start_idx=new_idx) — start_new_session invalidates the
+        prior session first. `prebuffer_frames` lets a seek wait for a cushion
+        before audio starts (avoids post-seek stutter into an empty buffer)."""
+        session = PlaybackSession(
+            id=self.start_new_session(),
+            chunks=chunks,
+            config=config,
+            start_idx=start_idx,
+            title=title,
+            prebuffer_frames=prebuffer_frames,
+        )
+        # E4:不再写 is_playing 存储标志——播放真相由 playback_status() 从 player 现算
+        if title is not None:
+            self.runtime_state.set_main(title=title)
+        # ADR-003 F1: start the player SYNCHRONOUSLY here (before the producer
+        # thread), so a command response computed right after play() sees the
+        # player running+prebuffering → playback_status()=="generating", not the
+        # stale "idle" of a not-yet-started player (which flipped the pause button
+        # to "play" after seek/next). The producer thread no longer calls start().
+        self.player.start(prebuffer_frames=prebuffer_frames)
+        self._start_thread(self._shared_task_loop, (session,), "tts-playback")
+        self._record_event(
+            "tts_thread_started",
+            session_id=session.id,
+            start_idx=start_idx,
+            chunk_count=len(chunks),
+        )
+        return session
+
+    def stop_current_session(self) -> None:
+        self.controller.stop_current_session()
+        self._record_event(
+            "playback_session_stopped",
+            current_task_id=self.shared_state.current_task_id.value,
+        )
+
+    def snapshot(self) -> dict[str, Any]:
+        return self.controller.snapshot()
+
+    def playback_status(self) -> str:
+        """The single computed playback truth (ADR-003). Derived on-read from the
+        player — there is no stored is-playing flag to race/clobber. Priority:
+        not running → idle (covers 'finished'); paused → paused; prebuffering →
+        generating (started, first sound not out yet, incl. post-seek pre-roll);
+        else → playing. status_code/audio_frames are diagnostics, not truth."""
+        p = self.player
+        if p is None or not p.is_running():
+            return "idle"
+        if getattr(p, "is_paused", False):
+            return "paused"
+        if getattr(p, "is_prebuffering", False):
+            return "generating"
+        return "playing"
+
+    # ---- 读侧 pass-through(#10 C4.3):backend 不再越过本服务直摸 player ----
+
+    def playing_index(self):
+        """当前出声句索引(None=未在播/未知);/snapshot 卡拉OK 用。"""
+        return self.player.playing_index() if self.player else None
+
+    def queue_duration(self) -> float:
+        return self.player.get_queue_duration() if self.player else 0.0
+
+    def queue_depth(self) -> int:
+        return self.player.queue_depth() if self.player else 0
+
+    def is_active(self) -> bool:
+        """player 是否在一轮播放中(≙ playback_status != idle)。"""
+        return bool(self.player is not None and self.player.is_running())
+
+    def device_switching(self) -> bool:
+        return bool(self.player is not None and self.player.is_device_switching())
+
+    def close_player(self) -> None:
+        if self.player is not None:
+            self.player.close()
+
+    def pause(self) -> None:
+        self.player.pause()
+        self._record_event("playback_paused")
+
+    def resume(self) -> None:
+        self.player.resume()
+        self._record_event("playback_resumed")
+
+    def restart_device(self) -> None:
+        self.player.restart_device()
+        self._record_event("audio_device_restarted")
+
+    def feed_audio_loop(self, shutdown_event: threading.Event) -> None:
+        """Consume the inference audio_q and feed the player (ADR-002 — moved
+        here from backend.audio_feeder_thread). Single destination: the player.
+        The old podcast-buffer routing (runtime_state.podcast_file) was dead
+        after ADR-001 and has been removed."""
+        while not shutdown_event.is_set():
+            try:
+                item = self.shared_state.audio_q.get()
+                if item is None:
+                    break
+                # Tagged end-of-article marker (sentinel, task_id): only the marker
+                # belonging to the current session may finish playback. A stale
+                # marker from a superseded read is dropped — this is the guard that
+                # stops a previous session's sentinel from prematurely flipping the
+                # new read to 'finished'. Must precede the audio-tuple branch below
+                # (the marker is also a len-2 tuple).
+                if (
+                    isinstance(item, tuple)
+                    and len(item) == 2
+                    and item[0] == self.sentinel
+                ):
+                    if item[1] == self.shared_state.current_task_id.value:
+                        self.player.signal_end_of_article()
+                    continue
+                if isinstance(item, str) and item == self.sentinel:
+                    self.player.signal_end_of_article()
+                    continue
+                if isinstance(item, tuple):
+                    if len(item) == 3:
+                        tid, chunk_idx, samples = item
+                    elif len(item) == 2:
+                        tid, samples = item
+                        chunk_idx = -1
+                    else:
+                        continue
+                    if tid == self.shared_state.current_task_id.value:
+                        if chunk_idx is not None and chunk_idx >= 0:
+                            self.player.play_chunk((samples, chunk_idx))
+                        else:
+                            self.player.play_chunk(samples)
+            except Exception:
+                if shutdown_event.is_set():
+                    break
+
+    def play_wav_file(self, filepath: str, filename: str, start_idx: int = 0) -> None:
+        import os
+        from core.processor import TextProcessor
+
+        # 1. 尝试寻找并读取同名 .txt 文件以提取段落
+        chunks = []
+        txt_path = (filepath[:-4] if filepath.endswith(".wav") else filepath) + ".txt"
+        if os.path.exists(txt_path):
+            try:
+                with open(txt_path, "r", encoding="utf-8") as f:
+                    text = f.read()
+                # 使用 TextProcessor 切分句子
+                processor = TextProcessor()
+                chunks = processor.parse_dialogue_or_text(text)
+            except Exception as e:
+                print(f"[PlaybackService] Failed to read/parse txt sidecar: {e}")
+
+        # 2. 如果成功读取到了文稿 chunks，写入当前状态以在 Dashboard 显示
+        title = filename.replace(".wav", "").replace("podcast_", "")
+        try:
+            self.article_store.replace({
+                "title": title,
+                "chunks": chunks,
+                "current_index": start_idx,
+                # 持久化播客标记:冷启动后仍能识别"当前文章是已生成播客",
+                # 让 RESTART_MODE/从头重播走 WAV 而非 TTS 重合成(内存信号
+                # current_playing_podcast 重启即失,不可靠)。文本朗读会覆盖
+                # current_article(不含此键),标记随之自然失效。
+                "podcast_filename": filename,
+            })
+        except Exception as e:
+            print(f"[PlaybackService] Failed to save current_article to storage: {e}")
+
+        # E4:is_playing 存储标志已删,播放真相由 playback_status() 现算
+        self.runtime_state.set_main(
+            title="🎙️ " + title,
+            progress=f"{start_idx + 1}/{len(chunks)}" if chunks else "1/1",
+        )
+        self.runtime_state.set_current_media(podcast=filename, md5=None)
+        session_id = self.start_new_session()
+        self._record_event(
+            "wav_playback_started",
+            session_id=session_id,
+            filename=filename,
+            filepath=filepath,
+            start_idx=start_idx,
+        )
+        self._start_thread(
+            self._play_wav_thread,
+            (filepath, session_id, chunks, title, start_idx),
+            "wav-playback",
+        )
+
+    def _shared_task_loop(self, session: PlaybackSession) -> None:
+        sid = session.id
+        chunks = session.chunks
+        config = session.config
+        profile = self.get_performance_profile(config.get("performance_profile"))
+        speed_factor = float(config.get("speed", 1.0))
+        buffer_high_sec = profile["buffer_high_sec"] * max(1.0, speed_factor)
+        buffer_low_sec = profile["buffer_low_sec"] * max(1.0, speed_factor)
+        try:
+            # ADR-003 F1: player was already started synchronously in play()
+            # (min_chunks_to_start + start()); the producer just feeds now.
+            self.shared_state.set_status("BUSY")
+            for i in range(session.start_idx, len(chunks)):
+                if self._shutdown_event.is_set() or not self.controller.can_feed_audio(sid):
+                    break
+                chunk_text = chunks[i]
+                if isinstance(chunk_text, dict):
+                    chunk_config = config.copy()
+                    chunk_config.update(chunk_text.get("config", {}))
+                    actual_text = chunk_text["text"]
+                    text_hash = self.get_text_hash(
+                        actual_text + "_" + chunk_config.get("voice", "")
+                    )
+                else:
+                    chunk_config = config
+                    actual_text = chunk_text
+                    text_hash = self.get_text_hash(actual_text)
+
+                self.shared_state.text_q.put(
+                    {
+                        "task_id": sid,
+                        "chunk_index": i,
+                        "text": actual_text,
+                        "config": chunk_config,
+                        "hash": text_hash,
+                    }
+                )
+
+                if self.player.get_queue_duration() > buffer_high_sec:
+                    self.shared_state.set_status("COOLING")
+                    while (
+                        self.player.get_queue_duration() > buffer_low_sec
+                        and not self._shutdown_event.is_set()
+                        and self.controller.can_feed_audio(sid)
+                    ):
+                        time.sleep(0.5)
+                    self.shared_state.set_status("BUSY")
+        finally:
+            if self.controller.is_current(sid):
+                self.shared_state.text_q.put((self.sentinel, sid))
+                self.player.wait_until_finished()
+                # wait_until_finished() can return because a NEW session called
+                # player.stop() (e.g. a podcast starting via play_wav_file). If
+                # we're no longer current, resetting playing-state here would
+                # clobber the new session's is_playing=True and break its pause
+                # button (Bug 2 — first podcast after a read couldn't pause).
+                # E4:is_playing 存储标志已删;is_current 门保留,防陈旧线程把
+                # 新会话的 status_code 打回 IDLE(Bug 2 家族)
+                if self.controller.is_current(sid):
+                    self.shared_state.set_status("IDLE")
+            self._record_event(
+                "tts_thread_finished",
+                session_id=sid,
+                is_current=self.controller.is_current(sid),
+            )
+
+    def _persist_current_index(self, title: str, idx: int) -> bool:
+        """Persist the live karaoke index to state.json for cross-restart resume.
+
+        Only the playback thread calls this (it is the single writer of the live
+        index); read-only endpoints never write. Returns True on success.
+        """
+        try:
+            return self.article_store.set_index(idx, expect_title=title)
+        except Exception:
+            pass
+        return False
+
+    def _play_wav_thread(self, path: str, session_id: int, chunks: list[str], title: str, start_idx: int = 0) -> None:
+        try:
+            import scipy.io.wavfile as wavfile
+
+            sr, wav_data = wavfile.read(path)
+
+            if len(wav_data.shape) == 1:
+                wav_data = np.stack([wav_data, wav_data], axis=1)
+
+            float_data = wav_data.astype(np.float32) / 32767.0
+            chunk_size = sr * 2
+            total_len = len(float_data)
+
+            # 预计算字数与停顿自适应权重占比以实现精准加权估算，解决滚动速度与朗读速度不匹配的问题
+            def calculate_virtual_weight(chunk: Any) -> float:
+                import re
+                if isinstance(chunk, dict):
+                    raw_text = chunk.get("text", "")
+                else:
+                    raw_text = str(chunk)
+                
+                # 剔除无声控制标签/角色前缀
+                clean_text = re.sub(r"\[[a-zA-Z0-9_\u4e00-\u9fa5]+\]\s*:", "", raw_text)
+                clean_text = re.sub(r"Persona\s*Anchor\s*:\s*[a-zA-Z0-9_]+\.?\s*", "", clean_text, flags=re.IGNORECASE)
+                
+                # 提取特征
+                num_zh = len(re.findall(r"[\u4e00-\u9fa50-9]", clean_text))
+                num_en_words = len(re.findall(r"\b[a-zA-Z']+\b", clean_text))
+                num_major_punc = len(re.findall(r"[。！？\.\?!]", clean_text))
+                num_minor_punc = len(re.findall(r"[，；、,;]", clean_text))
+                
+                # 语速停顿折合权重
+                w_zh = 1.0
+                w_en = 1.8
+                w_major = 5.0
+                w_minor = 2.0
+                
+                weight = (num_zh * w_zh) + (num_en_words * w_en) + (num_major_punc * w_major) + (num_minor_punc * w_minor)
+                return max(weight, 0.5)
+
+            cum_ratios = []
+            if chunks:
+                weights = [calculate_virtual_weight(c) for c in chunks]
+                total_weight = sum(weights)
+                if total_weight > 0:
+                    curr_sum = 0
+                    for w in weights:
+                        curr_sum += w
+                        cum_ratios.append(curr_sum / total_weight)
+                else:
+                    cum_ratios = [(idx + 1) / len(chunks) for idx in range(len(chunks))]
+
+            # Reset any larger pre-roll left over from a prior seek: a WAV is
+            # fully available, so it should start at once. (A leftover seek
+            # prebuffer of N could exceed a short podcast's total chunk count and
+            # stall it forever.)
+            self.player.start(prebuffer_frames=1)
+            # 节流持久化：RuntimeState 是实时索引的内存权威，state.json 仅用于
+            # 跨重启恢复，因此只在索引变化且距上次写入 >=1.5s 时落盘，避免每块写盘。
+            last_persist_idx = -1
+            last_persist_t = 0.0
+            if self.storage is not None:
+                config = self.storage.load_config()
+            else:
+                config = {}
+            speed_factor = float(config.get("speed", 1.0))
+
+            start_sample = 0
+            if start_idx > 0 and cum_ratios and (start_idx - 1) < len(cum_ratios):
+                start_ratio = cum_ratios[start_idx - 1]
+                start_sample = int(total_len * start_ratio)
+                # 对齐到 chunk_size 边界
+                start_sample = (start_sample // chunk_size) * chunk_size
+                start_sample = min(start_sample, total_len)
+
+            final_idx = start_idx
+            for i in range(start_sample, total_len, chunk_size):
+                if self._shutdown_event.is_set() or not self.controller.can_feed_audio(
+                    session_id
+                ):
+                    break
+
+                while (
+                    self.player.queue_depth() > 5
+                    and not self._shutdown_event.is_set()
+                    and self.controller.can_feed_audio(session_id)
+                ):
+                    time.sleep(0.5)
+
+                if not self.controller.can_feed_audio(session_id):
+                    break
+
+                chunk = float_data[i : i + chunk_size]
+                if abs(speed_factor - 1.0) >= 0.01:
+                    chunk = adjust_speed_numpy(chunk, speed_factor)
+
+                # 估算当前的句子索引并写入 state（使用字数加权二分/线性区间定位）
+                if chunks and cum_ratios:
+                    # 消除由于播放器队列提前缓存（通常缓存 5 个块约 10 秒音频）导致的严重文本超前偏差
+                    pending_samples = self.player.queue_depth() * chunk_size
+                    actual_i = max(0, i - pending_samples)
+                    ratio = actual_i / total_len
+                    curr_idx = 0
+                    for idx, r in enumerate(cum_ratios):
+                        if ratio <= r:
+                            curr_idx = idx
+                            break
+                    curr_idx = min(curr_idx, len(chunks) - 1)
+                    # 内存权威：每块即时更新（廉价、锁保护）
+                    self.runtime_state.set_main(index=curr_idx, total=len(chunks))
+                    final_idx = curr_idx
+                    # 落盘：节流，仅供跨重启恢复
+                    now = time.time()
+                    if curr_idx != last_persist_idx and (now - last_persist_t) >= 1.5:
+                        if self._persist_current_index(title, curr_idx):
+                            last_persist_idx = curr_idx
+                            last_persist_t = now
+
+                self.player.play_chunk(chunk)
+
+            # 收尾持久化最终索引（供下次 RESUME 精确恢复），不受节流间隔限制
+            if last_persist_idx != final_idx:
+                self._persist_current_index(title, final_idx)
+
+            if self.controller.is_current(session_id):
+                self.player.signal_end_of_article()
+                # Block until playback actually drains, not just until the
+                # producer finished feeding. A short podcast queues all its audio
+                # in well under a second; without this wait the finally below
+                # would flip is_playing=False while ~seconds of audio are still
+                # playing, so the UI couldn't pause it (Bug 3).
+                self.player.wait_until_finished()
+        except Exception as e:
+            print(f"[WavPlayer] Error: {e}")
+            self._record_event(
+                "wav_playback_failed",
+                session_id=session_id,
+                error=str(e),
+            )
+        finally:
+            # E4:is_playing 存储标志已删,无可 clobber——播放真相由
+            # playback_status() 从 player 现算,陈旧线程结构性无法污染新会话。
+            self._record_event(
+                "wav_playback_finished",
+                session_id=session_id,
+                is_current=self.controller.is_current(session_id),
+            )
+
+    def begin_shutdown(self) -> None:
+        if self._shutdown_event.is_set():
+            return
+        self._shutdown_event.set()
+        self.controller.stop_current_session()
+        if self.player is not None:
+            self.player.finish()
+
+    def shutdown(self, join_timeout: float = 2.0) -> None:
+        self.begin_shutdown()
+
+        with self._thread_lock:
+            threads = list(self._threads)
+        for thread in threads:
+            if thread is not threading.current_thread():
+                thread.join(join_timeout)
+
+    def _record_event(self, event: str, **fields: Any) -> None:
+        if self.event_log:
+            self.event_log.record(event, **fields)

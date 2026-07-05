@@ -1,0 +1,55 @@
+# CI 闸门:干净环境跑全部测试 + 防"pbxproj 忘提交"。
+# 背景:对抗性审查曾抓到"测试只在开发机的脏 DerivedData 下碰巧通过"与
+# "pbxproj 未随 project.yml 提交、干净 checkout 编不过"两类问题——本工作流
+# 让它们在推送时当场现形。公开仓库,macOS runner 免费。
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    name: backend pytest + app clean test
+    # macos-15:pbxproj objectVersion=77(xcodegen 2.45 产物)需要 Xcode 16+,
+    # macos-14 的默认 Xcode 15.x 读不了工程("Unable to read project")。
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # 后端测试必须在 macOS 跑:player.py 的 CoreAudio ctypes 监听是 macOS-only。
+      # 依赖用最小集(requirements-ci.txt),不装 mlx——FakeBackend 覆盖全部推理路径。
+      - name: Backend tests (FakeBackend, no MLX)
+        run: |
+          python -m pip install --quiet -r backend/requirements-ci.txt
+          cd backend
+          python -m pytest core/tests/ -q
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      # 专治"改了 project.yml 忘提交再生成的 pbxproj":生成后必须与提交内容零 diff。
+      - name: Verify pbxproj committed in sync with project.yml
+        run: |
+          cd QwenTTS
+          xcodegen generate
+          if ! git diff --exit-code -- QwenTTS.xcodeproj; then
+            echo "::error::project.pbxproj 与 project.yml 不同步——本地跑 'xcodegen generate' 并把 pbxproj 一起提交"
+            exit 1
+          fi
+
+      # clean test:专治"开发机脏 DerivedData 下碰巧能跑"。
+      - name: App clean test
+        run: |
+          cd QwenTTS
+          xcodebuild -project QwenTTS.xcodeproj -scheme QwenTTS \
+            -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO clean test

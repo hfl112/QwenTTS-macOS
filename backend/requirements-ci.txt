@@ -1,0 +1,15 @@
+# CI 最小依赖(计划 #12):只装 import 后端模块 + 跑 pytest 所需。
+# 刻意不含 mlx / mlx_audio —— 测试全走 FakeBackend,test_model_backend 还会
+# 断言 import 不触发 mlx;CI 装不上 mlx 反而是这条约束的免费验证。
+fastapi
+uvicorn
+pydantic
+numpy
+scipy
+sounddevice
+psutil
+pytest
+httpx
+# URL-Reader(reader_service/llm_engine)模块顶层 import 需要;LLM SDK 均为惰性 import 不装
+requests
+youtube-transcript-api

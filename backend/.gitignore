@@ -1,0 +1,12 @@
+**/__pycache__/
+*.py[cod]
+URL-Reader/cache/
+URL-Reader/data/
+URL-Reader/temp_*.md
+data/
+cache/
+logs/
+# Weight dirs only — must NOT catch mlx_audio/mlx_audio/**/models/ (that is
+# architecture *source code*, required by a clean clone). Anchored on purpose.
+/models/
+/mlx_audio/models/

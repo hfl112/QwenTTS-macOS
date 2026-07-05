@@ -1,0 +1,71 @@
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.venv/
+.python-version
+
+# ML model weights (crucial: never push large weights)
+**/models/
+*.safetensors
+*.bin
+*.pth
+*.pt
+*.onnx
+
+# Audio & media
+*.wav
+*.mp3
+*.m4a
+*.flac
+
+# OS & IDE
+.DS_Store
+.ipynb_checkpoints/
+.vscode/
+.idea/
+
+# Logs & data
+*.log
+*.jsonl
+*.lock
+# requirements.prod.lock is a tracked source-of-truth (overrides *.lock above)
+!requirements.prod.lock
+
+# Cache & DB
+*.npy
+*.db
+.pending_*
+
+# Release packaging products (keep local, do not track)
+release_runtime/
+
+# Swift sources include a 'Models/' dir (ModelManager.swift). The
+# case-insensitive **/models/ weight-dir rule (macOS core.ignorecase=true)
+# would otherwise drop it from git and break a clean-checkout build.
+!QwenTTS/QwenTTS/Models/
+!QwenTTS/QwenTTS/Models/**
+
+# Bundled mlx_audio keeps *architecture source code* under .../models/ dirs
+# (qwen3_tts.py, talker.py, ...). Without these, a clean clone packages a
+# broken app. Re-include the source; weights stay out via the rules below.
+!backend/mlx_audio/mlx_audio/**/models/
+!backend/mlx_audio/mlx_audio/**/models/**
+# ...but never let weight/blob files ride in through the re-include above.
+backend/mlx_audio/mlx_audio/**/*.safetensors
+backend/mlx_audio/mlx_audio/**/*.bin
+backend/mlx_audio/mlx_audio/**/*.pth
+backend/mlx_audio/mlx_audio/**/*.pt
+backend/mlx_audio/mlx_audio/**/*.onnx
+backend/mlx_audio/mlx_audio/**/*.npy
+
+# ICL reference audio ships with the app (AI-generated, no third-party
+# copyright) — required at runtime for voice cloning.
+!backend/reference/*.wav
+
+# Local tool state / debug dumps — never publish
+.claude/settings.local.json
+*_dump.txt
