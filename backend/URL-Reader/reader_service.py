@@ -7,8 +7,6 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Callable
 
-from youtube_transcript_api import YouTubeTranscriptApi
-
 
 StageCallback = Callable[[str, dict], None]
 
@@ -42,6 +40,15 @@ def extract_youtube_video_id(url: str) -> str | None:
 
 
 def get_youtube_transcript(video_id: str) -> str:
+    # Lazy import: youtube-transcript-api is only needed for YouTube URLs. A hard
+    # top-level import made a missing package crash ALL URL Reader flows on import.
+    try:
+        from youtube_transcript_api import YouTubeTranscriptApi
+    except ImportError as exc:
+        raise RuntimeError(
+            "YouTube transcript support needs the 'youtube-transcript-api' package "
+            "(declared in requirements.prod.txt)."
+        ) from exc
     api = YouTubeTranscriptApi()
     transcript_list = api.fetch(
         video_id,
