@@ -298,22 +298,29 @@ class PCMPlayer:
         self.device_changed_event.set()
         self.playback_finished_event.set()
         self.remove_listener()
+        stream_to_close = None
         with self._lock:
             self.is_active = False
             self.is_paused = False
             self.device_is_changing = False
-            if self.stream is not None:
-                try:
-                    self.stream.stop()
-                    self.stream.close()
-                except Exception:
-                    pass
-                self.stream = None
+            # Detach the stream under the lock but stop()/close() it OUTSIDE the
+            # lock: PortAudio's stop() blocks until the audio callback returns,
+            # and the callback also takes self._lock — stopping under the lock
+            # deadlocks (root cause of the leaked-semaphore shutdown hangs).
+            # Mirrors the capture-null-release pattern already used elsewhere.
+            stream_to_close = self.stream
+            self.stream = None
+        if stream_to_close is not None:
             try:
-                sd._terminate()
-                print("[PCMPlayer] PortAudio 已终止")
+                stream_to_close.stop()
+                stream_to_close.close()
             except Exception:
                 pass
+        try:
+            sd._terminate()
+            print("[PCMPlayer] PortAudio 已终止")
+        except Exception:
+            pass
         if (
             hasattr(self, "_device_monitor_thread")
             and self._device_monitor_thread is not threading.current_thread()

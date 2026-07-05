@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 import signal
 import uuid
+import hmac
 
 # 确保能找到 core 目录
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -367,7 +368,9 @@ async def lifespan(app: FastAPI):
             if playback_service is not None:
                 playback_service.close_player()
 
-app = FastAPI(lifespan=lifespan)
+# docs/redoc/openapi disabled: the middleware would serve them token-free (they
+# are GET and not state-changing), leaking the API surface. The app never uses them.
+app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -399,7 +402,7 @@ async def management_token_middleware(request: Request, call_next) -> Any:
     
     x_token: str | None = request.headers.get("x-management-token")
     x_ext_token: str | None = request.headers.get("x-extension-token")
-    has_mgmt: bool = bool(token) and x_token == token
+    has_mgmt: bool = bool(token) and hmac.compare_digest(x_token or "", token)
     method: str = request.method
 
     def deny(detail: str) -> JSONResponse:
@@ -432,7 +435,7 @@ async def management_token_middleware(request: Request, call_next) -> Any:
             return await call_next(request)
         config: Dict[str, Any] = storage.load_config() if storage else {}
         pairing_token: str | None = config.get("extension_pairing_token")
-        if pairing_token and x_ext_token == pairing_token:
+        if pairing_token and hmac.compare_digest(x_ext_token or "", pairing_token):
             return await call_next(request)
         return deny("Unauthorized: invalid extension token or pairing required")
 
