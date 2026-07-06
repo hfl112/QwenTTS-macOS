@@ -1,6 +1,6 @@
 <div align="center">
 
-# QwenTTS for macOS
+# Local QwenTTS for macOS
 
 **Turn anything into natural speech — privately, on your Mac.**
 
