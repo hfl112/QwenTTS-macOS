@@ -1,6 +1,6 @@
 <div align="center">
 
-# QwenTTS for macOS
+# Local QwenTTS for macOS
 
 **把任何文字变成自然语音 —— 全程在你的 Mac 本地完成。**
 
