@@ -4,6 +4,11 @@ Known improvements deferred after the initial public release. **None of these bl
 using the app** — the core read / podcast / URL-reader flows work today. Grouped by
 theme, roughly in priority order. File references are 1-indexed.
 
+> **Status:** public since **v0.1.0** (2026-07-05). Everything below is post-release
+> polish — hardening was verified with a clean-checkout build (backend tests + Swift
+> `xcodebuild` + extension build all green). Telemetry is already fully off
+> (`HF_HUB_DISABLE_TELEMETRY` set at backend startup + no analytics SDK).
+
 ## Reliability
 
 - [ ] **Inference-child liveness + respawn.** The MLX inference subprocess is spawned
