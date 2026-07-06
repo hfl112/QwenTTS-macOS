@@ -101,13 +101,21 @@ wizard downloads them on first launch (or later under **Settings → Local Model
 
 ## Connect the Chrome extension (optional)
 
-For reading web pages and YouTube, the app pairs with a companion extension over a
+For reading web pages and YouTube, the app pairs with a companion extension
+(included in this repo at [`qwen-tts-extension/`](./qwen-tts-extension)) over a
 secure local token — so no random web page can drive your local API.
 
-1. In the app's **Settings**, find **Extension Pairing Code** and click
-   **Generate** — you'll get an 8-character token. Click **Save**.
-2. Install the `qwen-tts-extension` in Chrome/Edge.
-3. Paste the 8-character token into the extension's **Pairing Token** field and save.
+1. In the app's **Settings**, find **Extension Pairing Code**, click **Generate**
+   (an 8-character token), then **Save**.
+2. Build the bundled extension:
+   ```bash
+   cd qwen-tts-extension
+   npm install
+   npm run build          # outputs an unpacked extension to .output/chrome-mv3
+   ```
+3. Open `chrome://extensions` in Chrome/Edge, enable **Developer mode**, click
+   **Load unpacked**, and select `qwen-tts-extension/.output/chrome-mv3`.
+4. Paste the 8-character token into the extension's **Pairing Token** field and save.
 
 ## Optional AI features (bring your own key)
 
@@ -148,7 +156,8 @@ happen in the backend; the app is a thin, native client.
 
 ## License & credits
 
-- This project is licensed under the **MIT License** — see [LICENSE](LICENSE).
+- **QwenTTS** © 2026 QwenTTS contributors, released under the **MIT License** — see [LICENSE](LICENSE).
+- The bundled Chrome/Edge extension (`qwen-tts-extension/`) is part of this project (MIT), built with [WXT](https://wxt.dev).
 - Bundled [mlx-audio](https://github.com/Blaizzy/mlx-audio) is MIT-licensed
   (see `backend/mlx_audio/LICENSE`). Full attribution is in
   [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

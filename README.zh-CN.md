@@ -89,11 +89,17 @@ python run_diagnostics.py dist/QwenTTS.app   # 验证打包产物
 
 ## 接入 Chrome 扩展(可选)
 
-朗读网页和 YouTube 时,App 通过一个**安全本地令牌**与配套扩展配对——这样任何网页都无法擅自驱动你的本地 API。
+朗读网页和 YouTube 时,App 通过一个**安全本地令牌**与配套扩展(已随仓库提供,见 [`qwen-tts-extension/`](./qwen-tts-extension))配对——这样任何网页都无法擅自驱动你的本地 API。
 
-1. 在 App 的**"系统设置"**中找到**"扩展配对码"**,点击**"生成配对码"**得到一个 8 位令牌,点击**"保存修改"**。
-2. 在 Chrome/Edge 安装配套的 `qwen-tts-extension` 扩展。
-3. 把 8 位配对码填入扩展的 **Pairing Token** 栏并保存。
+1. 在 App 的**"系统设置"**中找到**"扩展配对码"**,点击**"生成配对码"**得到 8 位令牌,点击**"保存修改"**。
+2. 构建内置扩展:
+   ```bash
+   cd qwen-tts-extension
+   npm install
+   npm run build          # 产物(已解压的扩展)在 .output/chrome-mv3
+   ```
+3. 在 Chrome/Edge 打开 `chrome://extensions`,开启**开发者模式**,点**"加载已解压的扩展程序"**,选择 `qwen-tts-extension/.output/chrome-mv3`。
+4. 把 8 位配对码填入扩展的 **Pairing Token** 栏并保存。
 
 ## 可选 AI 功能(自带 API key)
 
@@ -128,7 +134,8 @@ python run_diagnostics.py dist/QwenTTS.app   # 验证打包产物
 
 ## 许可与致谢
 
-- 本项目采用 **MIT License**——见 [LICENSE](LICENSE)。
+- **QwenTTS** © 2026 QwenTTS contributors,以 **MIT License** 发布——见 [LICENSE](LICENSE)。
+- 内置的 Chrome/Edge 扩展(`qwen-tts-extension/`)是本项目的一部分(MIT),基于 [WXT](https://wxt.dev) 构建。
 - 捆绑的 [mlx-audio](https://github.com/Blaizzy/mlx-audio) 为 MIT 许可(见 `backend/mlx_audio/LICENSE`),
   完整署名见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 - `backend/reference/` 下的音色参考音频均为 **AI 生成**——非真人录音、无第三方版权。
