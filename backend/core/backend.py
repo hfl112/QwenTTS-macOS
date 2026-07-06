@@ -12,6 +12,10 @@ import signal
 import uuid
 import hmac
 
+# Disable Hugging Face / transformers telemetry so the app makes zero analytics
+# calls of any kind (backs the "no telemetry" promise). Set before those libs load.
+os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
+
 # 确保能找到 core 目录
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if BASE_DIR not in sys.path:
