@@ -21,7 +21,7 @@ No cloud, no account, no subscription.
 
 ---
 
-## Why QwenTTS
+## Why Local QwenTTS
 
 Most text-to-speech tools either send your text to a cloud service or sound robotic.
 QwenTTS is built around three ideas:
