@@ -40,6 +40,15 @@ TTS inference runs locally on your Mac. Your text does not need to be sent to a 
 - About 6 GB of disk space, including the app and model weights downloaded on first launch.
 - 16 GB memory or more is recommended.
 - Intel Macs are not supported.
+- The web/YouTube reader needs [Node.js](https://nodejs.org) and the
+  [defuddle](https://github.com/kepano/defuddle) CLI (turns fetched pages into clean
+  article text). One-time install:
+
+  ```bash
+  brew install node && npm install -g defuddle
+  ```
+
+  Everything else (read-aloud, saved items, podcasts) works without it.
 
 ## Installation
 

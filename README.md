@@ -52,6 +52,13 @@ Free and open-source (MIT). No sign-up, no telemetry.
 - **macOS 14.0 (Sonoma) or later.**
 - **~6 GB free disk** (app + a ~5.2 GB model downloaded on first launch).
 - **16 GB RAM or more** recommended.
+- **For the web/YouTube reader:** [Node.js](https://nodejs.org) plus the
+  [defuddle](https://github.com/kepano/defuddle) CLI — it turns fetched pages into
+  clean article text. Install once with:
+  ```bash
+  brew install node && npm install -g defuddle
+  ```
+  Everything else (read-aloud, saved items, podcasts) works without it.
 
 ## Get started
 

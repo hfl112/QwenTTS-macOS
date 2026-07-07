@@ -40,6 +40,14 @@ TTS 推理在本机完成，不需要把文本发送到云端 TTS 服务。
 - 磁盘空间约 6 GB，包含应用本体和首次启动下载的模型权重。
 - 建议 16 GB 内存及以上。
 - 不支持 Intel Mac。
+- 使用网页/YouTube 阅读功能需要 [Node.js](https://nodejs.org) 和
+  [defuddle](https://github.com/kepano/defuddle) 命令行工具（把抓取的网页修剪成干净正文）。一次性安装：
+
+  ```bash
+  brew install node && npm install -g defuddle
+  ```
+
+  其余功能（直接朗读、稍后阅读、播客）不装它也能用。
 
 ## 安装
 
