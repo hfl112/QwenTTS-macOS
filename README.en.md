@@ -21,10 +21,6 @@ TTS inference runs locally on your Mac. Your text does not need to be sent to a 
 
 ## Screenshots
 
-### Read Web Pages And Long Text
-
-![QwenTTS reading console](docs/images/main-window-url-reading.png)
-
 ### Save Articles And Manage Podcasts
 
 ![QwenTTS library and podcasts](docs/images/library-podcasts.png)

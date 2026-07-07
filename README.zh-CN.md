@@ -21,10 +21,6 @@ TTS 推理在本机完成，不需要把文本发送到云端 TTS 服务。
 
 ## 截图
 
-### 朗读网页和长文
-
-![QwenTTS reading console](docs/images/main-window-url-reading.png)
-
 ### 管理稍后阅读和播客
 
 ![QwenTTS library and podcasts](docs/images/library-podcasts.png)
