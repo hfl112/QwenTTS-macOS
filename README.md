@@ -15,7 +15,7 @@ No cloud, no account, no subscription.
 
 **English** · [简体中文](./README.zh-CN.md)
 
-<!-- Tip: drop a hero screenshot / demo GIF here before publishing. -->
+![QwenTTS reading a web article aloud](docs/images/main-window-url-reading.png)
 
 </div>
 
@@ -45,6 +45,10 @@ Free and open-source (MIT). No sign-up, no telemetry.
 | 🌐 | **Web & YouTube reader** | Send a web page or YouTube video to the app (via the Chrome extension) and listen to a cleaned-up version. |
 | ♻️ | **Smart reuse** | Finished audio, cleaned transcripts and sentence-level chunks are cached — the app never burns compute re-doing work it already did. |
 | 🤖 | **Optional AI (your key)** | Summaries, translation and podcast scripting via Gemini / Claude / OpenAI / DeepSeek — or a local model. See [privacy](#privacy). |
+
+Saved articles and generated podcasts live in the built-in library:
+
+![Library with saved articles and podcasts](docs/images/library-podcasts.png)
 
 ## Requirements
 
@@ -100,6 +104,8 @@ wizard downloads them on first launch (or later under **Settings → Local Model
   slower, so it's best for offline podcast generation.
 - Weights download to `~/Library/Application Support/QwenTTS/Models/`. Already have
   them elsewhere? The wizard lets you point at an existing model folder.
+
+![Settings with performance modes and local model management](docs/images/settings-local-model.png)
 
 > **Model license:** weights come from Hugging Face
 > ([mlx-community/Qwen3-TTS-12Hz-0.6B-Base-4bit](https://huggingface.co/mlx-community/Qwen3-TTS-12Hz-0.6B-Base-4bit)),
