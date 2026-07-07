@@ -1,179 +1,138 @@
-<div align="center">
+# QwenTTS macOS
 
-# Local QwenTTS for macOS
+QwenTTS is a local text-to-speech app for Apple Silicon Macs. It wraps Qwen3-TTS and MLX-Audio in a native macOS client, with support for reading pasted text, web pages, YouTube content, saved articles, generated podcasts, a built-in library, and menu bar playback.
 
-**Turn anything into natural speech — privately, on your Mac.**
+TTS inference runs locally on your Mac. Your text does not need to be sent to a cloud TTS service.
 
-A native menu-bar app that reads text, articles, web pages and YouTube aloud, and
-turns them into two-host podcasts — running the Qwen3-TTS model fully on-device.
-No cloud, no account, no subscription.
-
-![macOS 14+](https://img.shields.io/badge/macOS-14+-000000?logo=apple&logoColor=white)
-&nbsp;![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-M1+-333333)
-&nbsp;![On-device TTS](https://img.shields.io/badge/TTS-100%25%20on--device-brightgreen)
-&nbsp;![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
+[Download the latest DMG](https://github.com/hfl112/QwenTTS-macOS/releases) · Apple Silicon only · macOS 14+ · Local-first
 
 **English** · [简体中文](./README.zh-CN.md)
 
-![QwenTTS reading a web article aloud](docs/images/main-window-url-reading.png)
+![QwenTTS reading a web article](docs/images/main-window-url-reading.png)
 
-</div>
+## Features
 
----
+- Runs Qwen3-TTS locally on Apple Silicon with MLX.
+- Reads pasted text, long articles, web pages, and YouTube content.
+- Supports original, translation, discussion, and two-speaker translation modes.
+- Saves articles for later listening in the built-in library.
+- Generates single-speaker audio or two-speaker podcast-style conversations.
+- Provides native macOS playback controls from the main window and menu bar.
+- Manages local models, existing model folders, performance mode, and battery policy.
+- Works with a companion Chrome/Edge extension for browser-to-local reading.
 
-## Why Local QwenTTS
+## Screenshots
 
-Most text-to-speech tools either send your text to a cloud service or sound robotic.
-QwenTTS is built around three ideas:
+### Save Articles And Manage Podcasts
 
-- **🔒 Private by default.** The core text-to-speech runs entirely on your Mac
-  (Apple's MLX framework). Your text is never uploaded to a TTS cloud.
-- **⚡ Real-time on Apple Silicon.** A 4-bit Qwen3-TTS model synthesizes speech
-  faster than real time on ordinary M-series chips — start listening immediately.
-- **🎙️ More than a reader.** Clean up long articles, generate two-host podcasts,
-  and listen to web pages or YouTube videos — not just paste-and-play.
+![QwenTTS library and podcasts](docs/images/library-podcasts.png)
 
-Free and open-source (MIT). No sign-up, no telemetry.
+### Manage Local Models
 
-## What you can do
-
-| | Feature | What it's for |
-|---|---|---|
-| 🗣️ | **Instant read-aloud** | Paste text, hit play — natural Chinese/English speech in a click. |
-| 📄 | **Long-article mode** | Clean up and save long documents, then listen start-to-finish. |
-| 🎙️ | **Two-host podcasts** | Turn any article into a natural dual-speaker conversation you can play offline. |
-| 🌐 | **Web & YouTube reader** | Send a web page or YouTube video to the app (via the Chrome extension) and listen to a cleaned-up version. |
-| ♻️ | **Smart reuse** | Finished audio, cleaned transcripts and sentence-level chunks are cached — the app never burns compute re-doing work it already did. |
-| 🤖 | **Optional AI (your key)** | Summaries, translation and podcast scripting via Gemini / Claude / OpenAI / DeepSeek — or a local model. See [privacy](#privacy). |
-
-Saved articles and generated podcasts live in the built-in library:
-
-![Library with saved articles and podcasts](docs/images/library-podcasts.png)
+![QwenTTS local model settings](docs/images/settings-local-model.png)
 
 ## Requirements
 
-- **Apple Silicon Mac (M1 or newer).** Inference uses MLX; Intel Macs are not supported.
-- **macOS 14.0 (Sonoma) or later.**
-- **~6 GB free disk** (app + a ~5.2 GB model downloaded on first launch).
-- **16 GB RAM or more** recommended.
-- **For the web/YouTube reader:** [Node.js](https://nodejs.org) plus the
-  [defuddle](https://github.com/kepano/defuddle) CLI — it turns fetched pages into
-  clean article text. Install once with:
+- Apple Silicon Mac, M1 or newer.
+- macOS 14.0 Sonoma or newer.
+- About 6 GB of disk space, including the app and model weights downloaded on first launch.
+- 16 GB memory or more is recommended.
+- Intel Macs are not supported.
+- The web/YouTube reader needs [Node.js](https://nodejs.org) and the
+  [defuddle](https://github.com/kepano/defuddle) CLI (turns fetched pages into clean
+  article text). One-time install:
+
   ```bash
   brew install node && npm install -g defuddle
   ```
+
   Everything else (read-aloud, saved items, podcasts) works without it.
 
-## Get started
+## Installation
 
-### Option A — Download the app
+1. Open [Releases](https://github.com/hfl112/QwenTTS-macOS/releases) and download the latest `QwenTTS.dmg`.
+2. Open the DMG and drag `QwenTTS.app` into your `Applications` folder.
+3. If macOS blocks the app because it is not notarized, run:
 
-1. Download the latest `QwenTTS.dmg` from the [**Releases**](../../releases) page.
-2. Open the DMG and drag **QwenTTS.app** into your **Applications** folder.
-3. **First launch (Gatekeeper).** The public build isn't Apple-notarized yet, so
-   macOS will block it on first open. Clear the quarantine flag once:
    ```bash
    xattr -cr /Applications/QwenTTS.app
    ```
-   (Or go to **System Settings → Privacy & Security** and click **Open Anyway**.)
-4. Launch it — QwenTTS lives in your macOS menu bar.
 
-### Option B — Build from source
+   You can also allow it from System Settings > Privacy & Security.
 
-You'll need **full Xcode** (not just Command Line Tools),
-[`uv`](https://github.com/astral-sh/uv),
-[`xcodegen`](https://github.com/yonaskolb/XcodeGen), and a **statically-linked arm64
-ffmpeg** (pointed to via the `TTS_FFMPEG_PATH` env var). The first build downloads a
-python-build-standalone runtime.
+4. Launch `QwenTTS.app`. The app runs from the macOS menu bar and opens the main window.
 
-```bash
-python package_release.py                    # builds the app + standalone Python runtime + DMG
-python run_diagnostics.py dist/QwenTTS.app   # verifies the built bundle
+## Local Models
+
+Model weights are not bundled in the DMG. On first launch, QwenTTS checks the local environment and guides you through model setup. You can also manage models later from the Local Model section in Settings.
+
+Recommended models:
+
+- `Qwen3-TTS-0.6B-4bit`: recommended default, fast enough for real-time reading on common Apple Silicon Macs.
+- `Qwen3-TTS-1.7B-8bit`: higher quality but slower, better suited for offline generation or longer podcast-style audio.
+
+Models are stored by default at:
+
+```text
+~/Library/Application Support/QwenTTS/Models/
 ```
 
-Ad-hoc signing is the default (no developer certificate needed). With a Developer ID,
-set `TTS_SIGNING_IDENTITY` for a proper signature, then notarize with `notarize_dmg.py`.
+If you already have a model downloaded elsewhere, you can select the existing model directory from the setup wizard or settings page.
 
-## Set up the local model
+Model weights are downloaded from community quantized releases on Hugging Face, such as [mlx-community/Qwen3-TTS-12Hz-0.6B-Base-4bit](https://huggingface.co/mlx-community/Qwen3-TTS-12Hz-0.6B-Base-4bit). Model weights are not owned by this project and are not distributed in this repository. Please follow the license terms listed on each upstream model card.
 
-To keep the download small, the ~5.2 GB model weights are **not** bundled. A setup
-wizard downloads them on first launch (or later under **Settings → Local Model**):
+## Browser Extension
 
-- The default model is **`Qwen3-TTS-0.6B-4bit`** — currently the only tier that reads
-  in real time on a typical M-series chip. `Qwen3-TTS-1.7B-8bit` sounds better but is
-  slower, so it's best for offline podcast generation.
-- Weights download to `~/Library/Application Support/QwenTTS/Models/`. Already have
-  them elsewhere? The wizard lets you point at an existing model folder.
+QwenTTS can work with a companion Chrome/Edge extension to read web content. The app uses a pairing token so arbitrary web pages cannot call the local API directly.
 
-![Settings with performance modes and local model management](docs/images/settings-local-model.png)
+1. Open QwenTTS Settings.
+2. Generate an extension pairing token.
+3. Save settings.
+4. Install the companion `qwen-tts-extension` in Chrome or Edge.
+5. Paste the pairing token into the extension settings.
 
-> **Model license:** weights come from Hugging Face
-> ([mlx-community/Qwen3-TTS-12Hz-0.6B-Base-4bit](https://huggingface.co/mlx-community/Qwen3-TTS-12Hz-0.6B-Base-4bit)),
-> a community quantization of Qwen (Tongyi Qianwen). They are **not** part of this
-> project and are governed by the upstream license on their model card.
-
-## Connect the Chrome extension (optional)
-
-For reading web pages and YouTube, the app pairs with a companion extension
-(included in this repo at [`qwen-tts-extension/`](./qwen-tts-extension)) over a
-secure local token — so no random web page can drive your local API.
-
-1. In the app's **Settings**, find **Extension Pairing Code**, click **Generate**
-   (an 8-character token), then **Save**.
-2. Build the bundled extension:
-   ```bash
-   cd qwen-tts-extension
-   npm install
-   npm run build          # outputs an unpacked extension to .output/chrome-mv3
-   ```
-3. Open `chrome://extensions` in Chrome/Edge, enable **Developer mode**, click
-   **Load unpacked**, and select `qwen-tts-extension/.output/chrome-mv3`.
-4. Paste the 8-character token into the extension's **Pairing Token** field and save.
-
-## Optional AI features (bring your own key)
-
-Summaries, translation and dual-host podcast scripting are powered by a large language
-model. QwenTTS supports **Gemini, Claude, OpenAI, DeepSeek, and a local MLX model**.
-
-- Keys are entered in the app's **AI Engines** settings page and stored locally in the
-  app's config — there is **no `.env` fallback** and nothing is sent anywhere except the
-  provider you choose.
-- The **local model** option needs no key and no network.
+After pairing, browser content can be sent to the local QwenTTS app for reading or podcast generation.
 
 ## Privacy
 
-- **Text-to-speech is 100% on-device.** The text you read aloud never leaves your Mac.
-- **The optional AI features are the only network calls.** When you use summary,
-  translation or podcast scripting with a *cloud* provider, that text is sent to the
-  provider you configured (with your own API key). Choose the local model to stay fully
-  offline. QwenTTS itself has no telemetry.
+QwenTTS runs TTS inference locally on your Mac. Reading text is not sent to a cloud TTS service.
 
-## Where your files live
+Some URL processing, translation, summarization, or discussion modes may use third-party LLM or translation providers if you configure them in the AI Engine settings. Plain local reading still works without enabling those providers.
 
-Everything is stored under macOS Application Support:
+Diagnostic exports are designed not to include saved article text, podcast job text, or other user content by default.
 
-| Path | Contents |
-|---|---|
-| `~/Library/Application Support/QwenTTS/Data/` | Config & saved items |
-| `~/Library/Application Support/QwenTTS/Models/` | Downloaded model weights |
-| `~/Library/Application Support/QwenTTS/Podcasts/` | Generated podcasts |
-| `~/Library/Application Support/QwenTTS/Cache/` | Temporary cache |
-| `~/Library/Application Support/QwenTTS/Logs/` | Diagnostic logs |
+## Runtime Files
 
-## Under the hood
+QwenTTS stores configuration, models, and generated files under Application Support:
 
-A native **AppKit** menu-bar app boots and supervises a local **FastAPI** backend
-(localhost only, per-launch auth token) that runs **Qwen3-TTS** on Apple's **MLX**
-via [MLX-Audio](https://github.com/Blaizzy/mlx-audio). All inference and audio playback
-happen in the backend; the app is a thin, native client.
+- Configuration data: `~/Library/Application Support/QwenTTS/Data/`
+- Local models: `~/Library/Application Support/QwenTTS/Models/`
+- Generated podcasts: `~/Library/Application Support/QwenTTS/Podcasts/`
+- Temporary cache: `~/Library/Application Support/QwenTTS/Cache/`
+- Diagnostic logs: `~/Library/Application Support/QwenTTS/Logs/`
 
-## License & credits
+## Build From Source
 
-- **QwenTTS** © 2026 QwenTTS contributors, released under the **MIT License** — see [LICENSE](LICENSE).
-- The bundled Chrome/Edge extension (`qwen-tts-extension/`) is part of this project (MIT), built with [WXT](https://wxt.dev).
-- Bundled [mlx-audio](https://github.com/Blaizzy/mlx-audio) is MIT-licensed
-  (see `backend/mlx_audio/LICENSE`). Full attribution is in
-  [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-- Reference voice clips under `backend/reference/` are **AI-generated** — no real-person
-  recordings, no third-party copyright.
-- Model weights are licensed separately (see *Set up the local model* above).
+Building the release DMG requires:
+
+- Full Xcode, not only Command Line Tools.
+- [`uv`](https://github.com/astral-sh/uv).
+- [`xcodegen`](https://github.com/yonaskolb/XcodeGen), needed after changing `project.yml`.
+- A statically linked arm64 `ffmpeg`, provided with `TTS_FFMPEG_PATH`. The packaging script rejects Homebrew's dynamically linked build.
+
+Build commands:
+
+```bash
+python package_release.py
+python run_diagnostics.py dist/QwenTTS.app
+```
+
+By default, the app uses ad-hoc signing and does not require an Apple Developer certificate. If you have a Developer ID identity, set `TTS_SIGNING_IDENTITY` for formal signing and use `notarize_dmg.py` for notarization.
+
+## License
+
+- This project is released under the MIT License. See [LICENSE](LICENSE).
+- The bundled [MLX-Audio](https://github.com/Blaizzy/mlx-audio) snapshot is MIT licensed. See `backend/mlx_audio/LICENSE`.
+- Reference audio under `backend/reference/` is AI-generated. See `backend/reference/README.md`.
+- Model weight licenses are defined by the corresponding Hugging Face model cards.
+

@@ -6,6 +6,8 @@ TTS 推理在本机完成，不需要把文本发送到云端 TTS 服务。
 
 [下载最新 DMG](https://github.com/hfl112/QwenTTS-macOS/releases) · Apple Silicon only · macOS 14+ · Local-first
 
+[English](./README.md) · **简体中文**
+
 ![QwenTTS reading a web article](docs/images/main-window-url-reading.png)
 
 ## 功能亮点
