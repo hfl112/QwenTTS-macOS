@@ -1,6 +1,7 @@
 import hashlib
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import urllib.request
@@ -117,15 +118,42 @@ def defuddle_html(html: str) -> str:
         cleanup_temp_file(temp_path)
 
 
+# GUI 启动的 app 只继承极简 PATH(/usr/bin:/bin:…),没有 Homebrew/npm 的 bin 目录,
+# 所以 defuddle(以及它 shebang 里 `/usr/bin/env node` 要找的 node)都会 Not Found。
+# 解析可执行文件与运行子进程都用补全后的 PATH,终端里能用 ≙ app 里能用。
+_EXTRA_BIN_DIRS = ("/opt/homebrew/bin", "/usr/local/bin")
+
+
+def _augmented_env() -> dict[str, str]:
+    env = os.environ.copy()
+    parts = env.get("PATH", "").split(":")
+    env["PATH"] = ":".join(parts + [d for d in _EXTRA_BIN_DIRS if d not in parts])
+    return env
+
+
 def defuddle_file(html_file_path: str) -> str:
+    env = _augmented_env()
+    exe = shutil.which("defuddle", path=env["PATH"])
+    if not exe:
+        raise RuntimeError(
+            "找不到 defuddle 命令(网页正文提取依赖)。请安装 Node 后执行 "
+            "`npm install -g defuddle`,并确保它位于 PATH 或 "
+            f"{'、'.join(_EXTRA_BIN_DIRS)} 中。"
+        )
     try:
         result = subprocess.run(
-            ["defuddle", "parse", html_file_path, "--md"],
+            [exe, "parse", html_file_path, "--md"],
             capture_output=True,
             text=True,
             check=True,
+            env=env,
         )
         return result.stdout
+    except subprocess.CalledProcessError as e:
+        detail = (e.stderr or "").strip().splitlines()
+        raise RuntimeError(
+            f"调用 defuddle 失败: {e}" + (f"(stderr: {detail[-1]})" if detail else "")
+        ) from e
     except Exception as e:
         raise RuntimeError(f"调用 defuddle 失败: {e}") from e
 
