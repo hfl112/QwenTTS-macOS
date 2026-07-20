@@ -43,18 +43,42 @@ def _app_version() -> str:
 
 APP_VERSION = _app_version()
 
-def run(args: list[str], *, cwd: Path | None = None) -> str:
+def run(args: list[str], *, cwd: Path | None = None, env: dict[str, str] | None = None) -> str:
     print("[Exec]", " ".join(args))
-    result = subprocess.run(args, cwd=cwd, capture_output=True, text=True)
+    result = subprocess.run(args, cwd=cwd, capture_output=True, text=True, env=env)
     if result.returncode:
         raise RuntimeError(result.stderr.strip() or result.stdout.strip())
     return result.stdout.strip()
 
+
+XCODE_APP_DEVELOPER_DIR = "/Applications/Xcode.app/Contents/Developer"
+
+
+def _native_build_env() -> dict[str, str]:
+    """xcodebuild/swiftc 的净化环境。坑都真实踩过(v0.1.1 装出来的包因此
+    丢了菜单栏图标):
+    1. conda base 把交叉工具链塞满环境——不止 PATH 前置 ld,还有
+       LIPO/STRIP/AR/SDKROOT 等裸工具名变量,xcodebuild 会把它们当
+       build setting(实测 LIPO=arm64-...-lipo 令 CreateUniversalBinary
+       直接 spawn 失败)。黑名单剔除打地鼠打不完,这里从零白名单构造。
+    2. xcode-select 指向 CommandLineTools 时 xcodebuild 不可用,此前会
+       静默退到 swiftc 兜底手攒 bundle。显式 DEVELOPER_DIR 指向完整
+       Xcode(AGENTS.md 约定:别因 CLT 而放弃 xcodebuild)。"""
+    env = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin"}
+    for key in ("HOME", "USER", "LOGNAME", "TMPDIR", "SHELL", "LANG", "TERM", "DEVELOPER_DIR"):
+        if key in os.environ:
+            env[key] = os.environ[key]
+    if "DEVELOPER_DIR" not in env and Path(XCODE_APP_DEVELOPER_DIR).is_dir():
+        env["DEVELOPER_DIR"] = XCODE_APP_DEVELOPER_DIR
+    return env
+
+
 def build_native_app() -> Path:
     if shutil.which("xcodegen") is not None:
         run(["xcodegen", "generate"], cwd=XCODE_ROOT)
+    build_env = _native_build_env()
     xcode_available = subprocess.run(
-        ["xcodebuild", "-version"], capture_output=True, text=True
+        ["xcodebuild", "-version"], capture_output=True, text=True, env=build_env
     ).returncode == 0
     if xcode_available:
         run(
@@ -74,6 +98,7 @@ def build_native_app() -> Path:
                 "build",
             ],
             cwd=XCODE_ROOT,
+            env=build_env,
         )
         app = BUILD_DIR / "DerivedData/Build/Products/Release/QwenTTS.app"
         if not app.is_dir():
@@ -85,7 +110,15 @@ def build_native_app() -> Path:
         shutil.rmtree(app)
     executable = app / "Contents/MacOS/QwenTTS"
     executable.parent.mkdir(parents=True)
-    (app / "Contents/Resources").mkdir()
+    resources_dir = app / "Contents/Resources"
+    resources_dir.mkdir()
+    # 兜底路径与 xcodebuild 产物对齐:把工程 Resources/ 里的资源装进 bundle。
+    # v0.1.1 就是漏了这步,StatusBarIcon.png 没进包,菜单栏退化成文字标题。
+    bundled_resources = XCODE_ROOT / "QwenTTS" / "Resources"
+    if bundled_resources.is_dir():
+        for item in bundled_resources.iterdir():
+            if item.is_file():
+                shutil.copy2(item, resources_dir / item.name)
     sources = sorted(str(path) for path in (XCODE_ROOT / "QwenTTS").rglob("*.swift"))
     run(
         [
@@ -99,7 +132,8 @@ def build_native_app() -> Path:
             *sources,
             "-o",
             str(executable),
-        ]
+        ],
+        env=build_env,
     )
     info = {
         "CFBundleDevelopmentRegion": "en",
