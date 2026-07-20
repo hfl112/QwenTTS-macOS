@@ -72,8 +72,8 @@ class SavedItemsService:
                     "content_mode": content_mode,
                 }
             )
-            if len(items) > 5:
-                items = items[-5:]
+            # 全量保留:早期只留最近 5 条(items[-5:]),会连置顶一起静默删除
+            # 旧文章;macOS App 的稍后朗读列表应完整,展示条数限制归各前端 UI。
             self.write(items)
 
         return len(items)

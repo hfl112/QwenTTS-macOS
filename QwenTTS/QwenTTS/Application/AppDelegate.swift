@@ -111,6 +111,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator?.stop()
     }
 
+    /// App 已在运行时再点 Finder/Launchpad 里的图标,系统只给运行实例发 reopen
+    /// 事件而不会二次启动;没有这个委托方法且无可见窗口时点击就"没反应"。
+    /// 与菜单栏"打开主面板"走同一入口。
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            coordinator?.openMainWindow()
+        }
+        return true
+    }
+
     /// Smoke 辅助：定位主窗口里的 ConsoleViewController（tab 0）并驱动一次即时朗读。
     private func smokeDriveConsoleRead(_ text: String) {
         guard let mainWin = NSApp.windows.first(where: { $0.title == "QwenTTS 控制台" }),

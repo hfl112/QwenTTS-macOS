@@ -94,6 +94,19 @@ def test_saved_items_service_round_trip():
         assert service.load() == []
 
 
+def test_saved_items_no_truncation_beyond_five():
+    """回归:save() 不得截断列表。早期实现只留最近 5 条(items[-5:]),
+    第 6 篇进来会静默永久删除最老一篇(置顶也不能幸免)。存储层全量保留,
+    展示条数限制(如扩展弹窗只显示 5 条)是各前端 UI 自己的事。"""
+    with tempfile.TemporaryDirectory() as tmp:
+        service = SavedItemsService(tmp)
+        for i in range(8):
+            service.save(f"article body {i}", source="test", title=f"T{i}")
+        items = service.load()
+        assert len(items) == 8
+        assert [i["title"] for i in items] == [f"T{i}" for i in range(8)]
+
+
 def test_podcast_service_file_ops():
     with tempfile.TemporaryDirectory() as tmp:
         podcasts_dir = os.path.join(tmp, "podcasts")
